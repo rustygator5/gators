@@ -119,10 +119,21 @@ a { color: var(--accent-ink); }
    field, orange chevron, official mark. Everything below it stays neutral so
    the numbers keep the contrast. */
 header {
-  background: linear-gradient(180deg, #002DB8 0%, var(--uf-blue) 100%);
+  /* The Swamp on a gameday, under a heavy UF-blue wash so white type keeps its
+     contrast. Public-domain photograph (Berniestew) via Wikimedia Commons —
+     credited in the footer. The solid colour underneath is the fallback if the
+     image never loads. */
+  background-color: var(--uf-blue);
+  background-image:
+    linear-gradient(180deg, rgba(0,14,64,.62) 0%, rgba(0,29,146,.76) 55%, rgba(0,33,165,.90) 100%),
+    url("https://upload.wikimedia.org/wikipedia/commons/thumb/0/07/Ben_Hill_Griffin_Stadium.jpg/1280px-Ben_Hill_Griffin_Stadium.jpg");
+  background-size: cover;
+  background-position: center 58%;
+  background-repeat: no-repeat;
   border-bottom: 3px solid var(--uf-orange);
-  padding: 15px 0 14px;
+  padding: 30px 0 26px;
   color: #fff;
+  text-shadow: 0 1px 4px rgba(0,0,0,.6);
 }
 header::after {
   content: ""; display: block; height: 0;
@@ -208,7 +219,17 @@ section { margin-bottom: 26px; }
   font-family: Oswald, "Arial Narrow", sans-serif;
   font-size: 20px; font-weight: 600; text-transform: uppercase; letter-spacing: .02em;
 }
-#next-section .card { border-top: 3px solid var(--uf-blue); }
+#next-section .card {
+  border-top: 3px solid var(--uf-blue);
+  position: relative; overflow: hidden;
+}
+#next-section .card::before {
+  content: "";
+  position: absolute; right: -18px; top: 50%; transform: translateY(-50%);
+  width: 150px; height: 150px; opacity: .07; pointer-events: none;
+  background: url("https://a.espncdn.com/i/teamlogos/ncaa/500/57.png") center / contain no-repeat;
+}
+#next-section .card > * { position: relative; }
 .next-meta { font-size: 13px; color: var(--text-2); }
 .next-meta strong { color: var(--text-1); font-weight: 600; }
 .next-nums { display: flex; gap: 22px; text-align: right; }
@@ -465,6 +486,8 @@ footer { color: var(--text-3); font-size: 12px; padding: 0 0 30px; }
       A personal fan project — not affiliated with, endorsed by, or connected to the
       University of Florida, the SEC, or ESPN. Team names and logos belong to their
       respective owners.
+      Header photograph of Ben Hill Griffin Stadium by Berniestew, public domain, via
+      <a href="https://commons.wikimedia.org/wiki/File:Ben_Hill_Griffin_Stadium.jpg" target="_blank" rel="noopener">Wikimedia Commons</a>.
     </footer>
   </div>
 </main>
