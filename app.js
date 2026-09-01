@@ -98,6 +98,7 @@ function render() {
   renderNext();
   renderChips();
   renderFpiChart();
+  renderWeekly();
   renderProjection();
   renderDistribution();
   renderTable();
@@ -318,6 +319,81 @@ function renderFpiChart() {
   $("#fpi-caption").textContent = single
     ? "Only one FPI run recorded so far — each line becomes a curve once ESPN posts its next update (usually overnight)."
     : "Florida's win probability in each selected game. Grey lines are the games you haven't highlighted.";
+}
+
+/* ---------------------------------------------------------- weekly grid --- */
+
+function renderWeekly() {
+  const table = $("#weekly-table");
+  const note = $("#weekly-note");
+  const weekly = Analysis.weeklySnapshots(state.data.games, state.history);
+
+  if (!weekly.weeks.length) {
+    table.innerHTML = `<tbody><tr><td class="empty-note">No weekly snapshots yet.</td></tr></tbody>`;
+    note.innerHTML = "";
+    return;
+  }
+
+  const head = `<thead><tr>
+      <th class="game-col">Game</th>
+      ${weekly.weeks.map((w) => `<th class="wk${w.state === "current" ? " current" : ""}">
+        ${w.label}${w.state === "current" ? "<br><span style='font-weight:500'>live</span>" : ""}
+      </th>`).join("")}
+    </tr></thead>`;
+
+  const body = weekly.rows.map((row) => {
+    const game = state.data.games.find((g) => g.id === row.id);
+    const cells = row.cells.map((cell) => {
+      if (cell.done) {
+        return `<td class="done" title="Already played">${cell.result === "W" ? "W" : cell.result === "L" ? "L" : "—"}</td>`;
+      }
+      if (cell.wp === null) return `<td class="blank">·</td>`;
+
+      const delta = cell.delta !== null && Math.abs(cell.delta) >= 0.1
+        ? `<span class="wdelta">${cell.delta > 0 ? "▲" : "▼"} ${Math.abs(cell.delta).toFixed(1)}</span>`
+        : "";
+      const title = `${row.opponent} — FPI ${cell.wp.toFixed(1)}% ${cell.locked ? "(locked)" : "(still moving)"}`;
+      return `<td class="cell${cell.isGameWeek ? " gameweek" : ""}"
+        style="background:${divergingFill(cell.wp)}" title="${title}">
+        ${cell.wp.toFixed(1)}${delta}
+      </td>`;
+    }).join("");
+
+    return `<tr>
+      <td class="game-col">
+        <span class="loc">${locWord(game.homeAway)}</span>
+        ${game.opponentRank ? `<span class="rank">#${game.opponentRank}</span> ` : ""}${row.name}
+      </td>
+      ${cells}
+    </tr>`;
+  }).join("");
+
+  table.innerHTML = head + `<tbody>${body}</tbody>`;
+
+  const locked = weekly.weeks.filter((w) => w.state === "locked").length;
+  note.innerHTML = `
+    <span class="swatch-row">
+      <span>Opponent favoured</span>
+      <span class="swatch">
+        <i style="background:${divergingFill(5)}"></i><i style="background:${divergingFill(25)}"></i>
+        <i style="background:${divergingFill(50)}"></i>
+        <i style="background:${divergingFill(75)}"></i><i style="background:${divergingFill(95)}"></i>
+      </span>
+      <span>Florida favoured</span>
+    </span>
+    <span class="item"><span style="box-shadow:inset 0 0 0 2px var(--uf-orange);width:12px;height:12px;border-radius:3px;display:inline-block"></span> the week that game is played</span>
+    <span class="item">${locked} week${locked === 1 ? "" : "s"} locked · Wk ${weekly.currentWeek} still moving</span>`;
+}
+
+/**
+ * Win probability is diverging around 50%: a coin flip is the neutral middle,
+ * and each side leans to its own pole. Mixed against the surface so the number
+ * on top stays readable in both themes.
+ */
+function divergingFill(wp) {
+  const strength = Math.min(1, Math.abs(wp - 50) / 50) * 55;
+  const pole = wp >= 50 ? "--div-cool" : "--div-warm";
+  return `color-mix(in oklab, var(${pole}) ${strength.toFixed(0)}%, var(--surface-1))`;
 }
 
 function renderProjection() {

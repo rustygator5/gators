@@ -210,6 +210,89 @@ const Analysis = (() => {
     return value;
   }
 
+  /**
+   * Week-by-week snapshots: what FPI said about every game as of each week of
+   * the season.
+   *
+   * A week runs Sunday->Saturday in local time, anchored to the Sunday before
+   * the opener, which puts every game in the week ESPN numbers it. A week's
+   * value is the LAST reading recorded before that week ended — so once a week
+   * is over its column is frozen for good, and only the current week's column
+   * still moves.
+   *
+   * Columns run from the first week with data through the current week; future
+   * weeks are empty by definition and aren't drawn.
+   */
+  function weeklySnapshots(games, history) {
+    const opener = games.find((g) => g.week === 1) || games[0];
+    if (!opener) return { weeks: [], rows: [] };
+
+    const anchor = new Date(opener.date);
+    anchor.setDate(anchor.getDate() - anchor.getDay());   // back up to Sunday
+    anchor.setHours(0, 0, 0, 0);
+
+    const weekEnd = (k) => {
+      const d = new Date(anchor);
+      d.setDate(d.getDate() + 7 * k);       // end of week k = start of week k+1
+      return d;
+    };
+    const weekOf = (date) =>
+      Math.floor((new Date(date) - anchor) / (7 * 86400000)) + 1;
+
+    const now = new Date();
+    const currentWeek = Math.max(1, weekOf(now));
+
+    const allPoints = Object.values(history).flat().filter((p) => p.wp !== null);
+    if (!allPoints.length) return { weeks: [], rows: [] };
+    const firstWeek = Math.max(1, Math.min(...allPoints.map((p) => weekOf(p.t))));
+
+    const weeks = [];
+    for (let k = firstWeek; k <= currentWeek; k++) {
+      weeks.push({
+        k,
+        label: `Wk ${k}`,
+        endsAt: weekEnd(k).toISOString(),
+        state: k < currentWeek ? "locked" : "current",
+      });
+    }
+
+    const rows = games.map((game) => {
+      const series = (history[game.id] || []).filter((p) => p.wp !== null);
+      const gameWeek = game.week ?? weekOf(game.date);
+      let previous = null;
+
+      const cells = weeks.map((week) => {
+        // Once the game has been played, FPI stops having an opinion on it.
+        if (game.completed && gameWeek < week.k) {
+          return { wp: null, delta: null, done: true, result: game.result };
+        }
+        const cutoff = week.endsAt;
+        let wp = null;
+        for (const p of series) if (p.t < cutoff) wp = p.wp;
+        const cell = {
+          wp,
+          delta: wp !== null && previous !== null ? Math.round((wp - previous) * 10) / 10 : null,
+          locked: week.state === "locked",
+          isGameWeek: gameWeek === week.k,
+        };
+        if (wp !== null) previous = wp;
+        return cell;
+      });
+
+      return {
+        id: game.id,
+        name: game.opponentShort || game.opponent,
+        opponent: game.opponent,
+        week: gameWeek,
+        completed: !!game.completed,
+        result: game.result,
+        cells,
+      };
+    });
+
+    return { weeks, rows, currentWeek };
+  }
+
   /** How far a game's win probability has moved recently, and overall. */
   function movement(series, days = 7) {
     const pts = (series || []).filter((p) => p.wp !== null && p.wp !== undefined);
@@ -231,5 +314,5 @@ const Analysis = (() => {
     };
   }
 
-  return { gradeGame, seasonSummary, winDistribution, closingValues, projectionTimeline, movement };
+  return { gradeGame, seasonSummary, winDistribution, closingValues, projectionTimeline, movement, weeklySnapshots };
 })();

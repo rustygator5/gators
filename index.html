@@ -38,6 +38,10 @@
   --series-3:   #1baf7a;
   --series-4:   #eda100;
   --context:    #b9b7b1;   /* de-emphasised lines */
+  /* diverging pair for win probability: cool = Florida favoured, warm = the
+     opponent is, and the neutral middle is the surface itself */
+  --div-cool:   #2a4bd0;
+  --div-warm:   #e34948;
 
   --good:       #128a4d;
   --good-bg:    #e3f5eb;
@@ -67,6 +71,8 @@
     --series-3:   #199e70;
     --series-4:   #c98500;
     --context:    #55544f;
+    --div-cool:   #5b76e8;
+    --div-warm:   #e66767;
 
     --good:       #4ac07f;
     --good-bg:    #16301f;
@@ -85,7 +91,7 @@
   --border:     #33332f;  --border-str:#4a4a45;
   --text-1:     #f5f4f0;  --text-2:    #b4b2ab;  --text-3:    #87857e;
   --series-1:   #5b76e8;  --series-2:  #FA4616;  --series-3:  #199e70;  --series-4: #c98500;
-  --context:    #55544f;
+  --context:    #55544f;  --div-cool:  #5b76e8;  --div-warm:  #e66767;
   --good:       #4ac07f;  --good-bg:   #16301f;  --bad:       #f0736a;  --bad-bg:   #331b19;
   --neutral-bg: #2a2a30;  --grid:      #2c2c2a;  --accent-ink:#7B90EE;
   --shadow:     0 1px 2px rgba(0,0,0,.4), 0 4px 14px rgba(0,0,0,.3);
@@ -219,6 +225,28 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .delta.flat { color: var(--text-3); }
 .muted { color: var(--text-3); }
 .bye-row td { background: var(--surface-2); font-size: 12.5px; }
+
+/* Week-by-week grid. Win probability is a diverging measure — 50% is a true
+   neutral, above it leans Florida, below it leans the opponent — so cells use
+   the diverging pair (cool / grey / warm), never a rainbow or a status colour. */
+.weekly { font-size: 13px; }
+.weekly th, .weekly td { text-align: center; padding: 7px 10px; white-space: nowrap; }
+.weekly th.wk { font-size: 11px; }
+.weekly th.wk.current { color: var(--uf-orange); }
+.weekly th.game-col, .weekly td.game-col {
+  text-align: left; position: sticky; left: 0; z-index: 1;
+  background: var(--surface-1); border-right: 1px solid var(--border);
+}
+.weekly tbody tr:hover td.game-col { background: var(--surface-2); }
+.weekly td.cell { font-variant-numeric: tabular-nums; font-weight: 600; border-radius: 0; }
+.weekly td.cell.gameweek { box-shadow: inset 0 0 0 2px var(--uf-orange); }
+.weekly .wdelta { display: block; font-size: 10px; font-weight: 500; color: var(--text-3); margin-top: 1px; }
+.weekly td.done { color: var(--text-3); font-weight: 600; }
+.weekly td.blank { color: var(--text-3); }
+.weekly col.current-col { background: var(--surface-2); }
+.swatch-row { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-2); }
+.swatch { display: flex; height: 10px; width: 130px; border-radius: 3px; overflow: hidden; }
+.swatch i { flex: 1; }
 .bye-row:hover td { background: var(--surface-2); }
 .spark { width: 62px; height: 20px; }
 
@@ -292,6 +320,17 @@ footer { color: var(--text-3); font-size: 12px; padding: 0 0 30px; }
           <figcaption id="fpi-caption"></figcaption>
         </figure>
       </div>
+    </section>
+
+    <section>
+      <div class="sec-head">
+        <h2>Week by week</h2>
+        <p>What FPI said about every game, as of each week. Once a week ends its column is frozen.</p>
+      </div>
+      <div class="card table-wrap">
+        <table class="weekly" id="weekly-table"></table>
+      </div>
+      <div id="weekly-note" class="legend" style="margin-top:10px"></div>
     </section>
 
     <section>
