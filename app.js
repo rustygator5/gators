@@ -32,7 +32,7 @@ async function boot() {
 
   const cache = Store.loadCache();
   if (cache && cache.games && cache.games.length) {
-    build(cache.games, cache.updated, cache.teamIndex);   // instant paint from the last visit
+    build(cache.games, cache.updated, cache.teamIndex, cache.teamStats);   // instant paint
   }
   await pull(false);
 }
@@ -57,9 +57,12 @@ async function pull(force) {
     // The season-long index is a nice-to-have: if it fails, the rest still renders.
     const [games, teamIndex] = await Promise.all([ESPN.fetchAll(), ESPN.fetchTeamIndex()]);
     if (games.length) {
+      // Box-score stats only exist once games are played, and the payload is
+      // the biggest of the lot — so don't spend it before the opener.
+      const teamStats = games.some((g) => g.completed) ? await ESPN.fetchTeamStats() : null;
       await Store.record(games, state.history);
-      Store.saveCache(games, teamIndex);
-      build(games, new Date().toISOString(), teamIndex);
+      Store.saveCache(games, teamIndex, teamStats);
+      build(games, new Date().toISOString(), teamIndex, teamStats);
     } else if (!state.data) {
       $("#loading").textContent = "Couldn't reach ESPN. Check your connection and refresh.";
     }
@@ -71,7 +74,7 @@ async function pull(force) {
 }
 
 /** Attach grading + history to each game, roll up the season, then paint. */
-function build(games, updated, teamIndex) {
+function build(games, updated, teamIndex, teamStats) {
   games.forEach((game) => {
     const series = state.history[game.id] || [];
     game.history = series;
@@ -84,6 +87,7 @@ function build(games, updated, teamIndex) {
     summary: Analysis.seasonSummary(games),
     timeline: Analysis.projectionTimeline(games, state.history),
     teamIndex: teamIndex !== undefined ? teamIndex : (state.data || {}).teamIndex || null,
+    teamStats: teamStats !== undefined ? teamStats : (state.data || {}).teamStats || null,
   };
   state.updated = updated;
   render();
@@ -105,6 +109,7 @@ function render() {
   renderKpis();
   renderOdds();
   renderProfile();
+  renderStats();
   renderNext();
   renderChips();
   renderFpiChart();
@@ -299,6 +304,56 @@ function renderProfile() {
         </div>
       </div>
     </div>`;
+}
+
+/* ------------------------------------------------- points & yards ------- */
+
+function renderStats() {
+  const stats = state.data.teamStats;
+  const box = $("#team-stats");
+  const note = $("#stats-note");
+
+  if (!stats) {
+    box.innerHTML = `<div class="empty-note" style="text-align:left;padding:14px 4px">
+      Box-score stats start after the first game. Once Florida has played, this shows
+      points and yards per game — scored and allowed — with where each figure ranks
+      among all FBS teams and inside the SEC.
+    </div>`;
+    note.textContent = "Per game, for and against, with where that ranks.";
+    return;
+  }
+
+  const line = (stat) => {
+    const value = stat.isPct ? `${stat.value}%` : stat.value.toFixed(1);
+    const secPart = stat.sec ? ` · ${ordinal(stat.sec.rank)} of ${stat.sec.of} SEC` : "";
+    // Top and bottom thirds get a nudge of colour, with the rank always spelled
+    // out beside it so the colour is never the only signal.
+    let tone = "";
+    if (stat.rank && stat.of) {
+      if (stat.rank <= stat.of / 3) tone = "rk-good";
+      else if (stat.rank > (stat.of * 2) / 3) tone = "rk-bad";
+    }
+    return `<div class="stat-line">
+      <span class="lbl">${stat.label}</span>
+      <span class="right">
+        <span class="v">${value}</span>
+        <span class="rk"><span class="${tone}">#${stat.rank ?? "—"}</span> of ${stat.of}${secPart}</span>
+      </span>
+    </div>`;
+  };
+
+  box.innerHTML = `<div class="stat-cols">
+      <div>
+        <h3 style="font-family:Oswald,'Arial Narrow',sans-serif;font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3);font-weight:500;margin-bottom:6px">Offense</h3>
+        ${stats.offense.map(line).join("")}
+      </div>
+      <div>
+        <h3 style="font-family:Oswald,'Arial Narrow',sans-serif;font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3);font-weight:500;margin-bottom:6px">Defense <span style="text-transform:none;letter-spacing:0">(allowed)</span></h3>
+        ${stats.defense.map(line).join("")}
+      </div>
+    </div>`;
+
+  note.textContent = "Per game, for and against. Defensive ranks are ESPN's — #1 allows the fewest.";
 }
 
 function ordinal(n) {

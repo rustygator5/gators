@@ -260,6 +260,100 @@ const ESPN = (() => {
     };
   }
 
+  /* ---- box-score team stats ---------------------------------------------
+   * Points and yards per game, for and against, with ESPN's national ranks.
+   *
+   * ESPN files the team totals under the "passing" category (totalPointsPerGame
+   * and yardsPerGame live there, oddly), and splits every category two ways:
+   * splitId "0" is what Florida did, "900" is what opponents did to them — so
+   * the same fields give offense and defense.
+   *
+   * Ranks in the opponent split are already defence-correct (rank 1 = fewest
+   * allowed, verified against the 2025 leaders), so they're used as published.
+   */
+  const BYTEAM_URL = (season) =>
+    "https://site.web.api.espn.com/apis/common/v3/sports/football/college-football" +
+    `/statistics/byteam?season=${season}&seasontype=2&limit=200`;
+
+  const OWN = "0";
+  const OPPONENT = "900";
+
+  // [key, category, label, lower-is-better-when-on-defense]
+  const STAT_PICKS = [
+    ["totalPointsPerGame", "passing", "Points"],
+    ["yardsPerGame", "passing", "Total yards"],
+    ["passingYardsPerGame", "passing", "Passing"],
+    ["rushingYardsPerGame", "rushing", "Rushing"],
+    ["thirdDownConvPct", "miscellaneous", "3rd down %"],
+  ];
+
+  /**
+   * `season` is overridable only so the parser can be checked against a
+   * completed season — nothing calls it with an argument in normal use.
+   */
+  async function fetchTeamStats(season = SEASON) {
+    const data = await getJson(BYTEAM_URL(season));
+    if (!data || !data.teams) return null;
+
+    const columns = {};
+    (data.categories || []).forEach((c) => { columns[c.name] = c.names || []; });
+
+    // team id -> split -> stat name -> {value, rank}
+    const read = (team) => {
+      const bySplit = { [OWN]: {}, [OPPONENT]: {} };
+      (team.categories || []).forEach((cat) => {
+        const target = bySplit[cat.splitId];
+        if (!target) return;
+        const keys = columns[cat.name] || [];
+        keys.forEach((key, i) => {
+          if (target[key]) return;                     // duplicate column: keep the first
+          const value = (cat.values || [])[i];
+          const rank = parseInt((cat.ranks || [])[i], 10);
+          if (typeof value !== "number") return;
+          target[key] = { value, rank: Number.isNaN(rank) ? null : rank };
+        });
+      });
+      return bySplit;
+    };
+
+    const all = data.teams.map((t) => ({ id: t.team.id, splits: read(t) }));
+    const florida = all.find((t) => t.id === FLORIDA_ID);
+    if (!florida) return null;                          // no games played yet
+
+    const secIds = await fetchSecIds();
+    const sec = all.filter((t) => secIds.includes(t.id));
+
+    const secRank = (split, key, lowerIsBetter) => {
+      const ranked = sec
+        .filter((t) => t.splits[split][key])
+        .sort((a, b) => (lowerIsBetter ? 1 : -1) * (a.splits[split][key].value - b.splits[split][key].value));
+      const index = ranked.findIndex((t) => t.id === FLORIDA_ID);
+      return index === -1 ? null : { rank: index + 1, of: ranked.length };
+    };
+
+    const side = (split) => STAT_PICKS.map(([key, , label]) => {
+      const stat = florida.splits[split][key];
+      if (!stat) return null;
+      // On defence fewer points and yards are better; a 3rd-down rate allowed
+      // is the same story, so the whole opponent split reads lower-is-better.
+      const lowerIsBetter = split === OPPONENT;
+      return {
+        key, label,
+        value: Math.round(stat.value * 10) / 10,
+        rank: stat.rank,
+        of: all.filter((t) => t.splits[split][key]).length,
+        sec: secRank(split, key, lowerIsBetter),
+        isPct: key.endsWith("Pct"),
+      };
+    }).filter(Boolean);
+
+    const offense = side(OWN);
+    const defense = side(OPPONENT);
+    if (!offense.length && !defense.length) return null;
+
+    return { offense, defense, season };
+  }
+
   /** Run promises a few at a time — 25 simultaneous requests is rude. */
   async function inBatches(items, size, worker) {
     const out = [];
@@ -279,5 +373,5 @@ const ESPN = (() => {
     return games;
   }
 
-  return { fetchAll, fetchTeamIndex, SEASON };
+  return { fetchAll, fetchTeamIndex, fetchTeamStats, SEASON };
 })();

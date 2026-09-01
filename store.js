@@ -17,6 +17,9 @@ const Store = (() => {
   const SEASON = 2026;
 
   const CACHE_KEY = "gatorTracker.season";
+  // Bumped whenever the cached payload gains a field the page renders, so a
+  // still-fresh cache from an older version can't leave new sections empty.
+  const CACHE_SHAPE = 2;
   const HIST_KEY = "gatorTracker.history";
 
   // Day one of tracking, captured by the local Flask version before this page
@@ -59,9 +62,18 @@ const Store = (() => {
     try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) { /* quota / private mode */ }
   }
 
-  const loadCache = () => readLocal(CACHE_KEY, null);
-  const saveCache = (games, teamIndex) =>
-    writeLocal(CACHE_KEY, { games, teamIndex: teamIndex || null, updated: new Date().toISOString() });
+  const loadCache = () => {
+    const cached = readLocal(CACHE_KEY, null);
+    return cached && cached.shape === CACHE_SHAPE ? cached : null;
+  };
+  const saveCache = (games, teamIndex, teamStats) =>
+    writeLocal(CACHE_KEY, {
+      shape: CACHE_SHAPE,
+      games,
+      teamIndex: teamIndex || null,
+      teamStats: teamStats || null,
+      updated: new Date().toISOString(),
+    });
 
   /* ---- history ---- */
   const rowToPoint = (row) => ({
