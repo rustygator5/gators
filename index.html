@@ -132,12 +132,29 @@ header {
   background-repeat: no-repeat;
   border-bottom: 3px solid var(--uf-orange);
   padding: 30px 0 26px;
+  transition: background-image .2s;
   color: #fff;
   text-shadow: 0 1px 4px rgba(0,0,0,.6);
 }
 header::after {
   content: ""; display: block; height: 0;
 }
+
+/* Dark mode keeps the blue field — it's the brand anchor — but drops the photo
+   deeper so the header doesn't glare against a near-black page. */
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) header {
+    background-image:
+      linear-gradient(180deg, rgba(0,8,36,.82) 0%, rgba(0,18,92,.88) 55%, rgba(0,22,116,.94) 100%),
+      url("https://upload.wikimedia.org/wikipedia/commons/thumb/0/07/Ben_Hill_Griffin_Stadium.jpg/1280px-Ben_Hill_Griffin_Stadium.jpg");
+  }
+}
+:root[data-theme="dark"] header {
+  background-image:
+    linear-gradient(180deg, rgba(0,8,36,.82) 0%, rgba(0,18,92,.88) 55%, rgba(0,22,116,.94) 100%),
+    url("https://upload.wikimedia.org/wikipedia/commons/thumb/0/07/Ben_Hill_Griffin_Stadium.jpg/1280px-Ben_Hill_Griffin_Stadium.jpg");
+}
+
 .wrap { max-width: 1100px; margin: 0 auto; padding: 0 20px; }
 .head-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
 .logo { width: 46px; height: 46px; object-fit: contain; flex: none;
@@ -155,9 +172,11 @@ header::after {
 .head-actions { margin-left: auto; display: flex; align-items: center; gap: 10px; }
 header #updated { color: #A9BBF2 !important; }
 header button {
-  background: rgba(255,255,255,.10); border-color: rgba(255,255,255,.35); color: #fff;
+  background: rgba(0,10,50,.55); border-color: rgba(255,255,255,.65); color: #fff;
+  text-shadow: none; backdrop-filter: blur(3px);
 }
-header button:hover { background: rgba(255,255,255,.20); }
+header button:hover { background: rgba(0,10,50,.80); border-color: #fff; }
+#theme-btn { font-size: 15px; line-height: 1; padding: 7px 11px; }
 header button.primary { background: var(--uf-orange); border-color: var(--uf-orange); color: #fff; }
 header button.primary:hover { filter: brightness(1.08); }
 

@@ -785,17 +785,40 @@ function relTime(iso) {
 /* ---------------------------------------------------------------- boot --- */
 
 $("#refresh-btn").onclick = () => pull(true);
+
+const isDark = () =>
+  getComputedStyle(document.documentElement).getPropertyValue("--surface-0").trim() === "#121213";
+
+/** The button shows where you're going, not where you are. */
+function syncThemeButton() {
+  const btn = $("#theme-btn");
+  const dark = isDark();
+  btn.textContent = dark ? "☀" : "☾";
+  btn.title = dark ? "Switch to light mode" : "Switch to dark mode";
+  btn.setAttribute("aria-label", btn.title);
+}
+
 $("#theme-btn").onclick = () => {
-  const root = document.documentElement;
-  const dark = getComputedStyle(root).getPropertyValue("--surface-0").trim() === "#121213";
-  root.setAttribute("data-theme", dark ? "light" : "dark");
-  try { localStorage.setItem("gatorTracker.theme", dark ? "light" : "dark"); } catch (e) {}
+  const next = isDark() ? "light" : "dark";
+  document.documentElement.setAttribute("data-theme", next);
+  try { localStorage.setItem("gatorTracker.theme", next); } catch (e) {}
+  syncThemeButton();
   if (state.data) render();
 };
+
 try {
   const saved = localStorage.getItem("gatorTracker.theme");
   if (saved) document.documentElement.setAttribute("data-theme", saved);
 } catch (e) {}
+syncThemeButton();
+
+// Following the system theme means reacting when the system changes.
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+  if (document.documentElement.getAttribute("data-theme") === "auto") {
+    syncThemeButton();
+    if (state.data) render();
+  }
+});
 
 let resizeTimer;
 window.addEventListener("resize", () => {
