@@ -60,7 +60,8 @@ const Store = (() => {
   }
 
   const loadCache = () => readLocal(CACHE_KEY, null);
-  const saveCache = (games) => writeLocal(CACHE_KEY, { games, updated: new Date().toISOString() });
+  const saveCache = (games, teamIndex) =>
+    writeLocal(CACHE_KEY, { games, teamIndex: teamIndex || null, updated: new Date().toISOString() });
 
   /* ---- history ---- */
   const rowToPoint = (row) => ({

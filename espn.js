@@ -157,6 +157,109 @@ const ESPN = (() => {
 
   const round2 = (n) => Math.round(Number(n) * 100) / 100;
 
+  /* ---- season-long FPI: the numbers behind ESPN's FPI page ---------------
+   * One request returns every FBS team's FPI rating, championship odds, resume
+   * ranks and efficiency ratings (~48KB gzipped). Having all 138 teams is what
+   * lets us rank Florida inside the SEC as well as nationally — ESPN publishes
+   * the national rank but not the conference one.
+   */
+  const POWERINDEX_URL =
+    `https://site.api.espn.com/apis/fitt/v3/sports/football/college-football/powerindex?season=${SEASON}&limit=200`;
+  const SEC_TEAMS_URL =
+    `https://sports.core.api.espn.com/v2/sports/football/leagues/college-football/seasons/${SEASON}/types/2/groups/8/teams?limit=50`;
+
+  // Used only if the conference lookup fails; the SEC's roster rarely moves.
+  const SEC_FALLBACK = ["2", "8", "57", "61", "96", "99", "142", "145",
+                        "201", "238", "245", "251", "333", "344", "2579", "2633"];
+
+  async function fetchSecIds() {
+    const data = await getJson(SEC_TEAMS_URL);
+    const ids = ((data || {}).items || [])
+      .map((i) => teamIdFromRef(i.$ref))
+      .filter(Boolean);
+    return ids.length ? ids : SEC_FALLBACK;
+  }
+
+  async function fetchTeamIndex() {
+    const [data, secIds] = await Promise.all([getJson(POWERINDEX_URL), fetchSecIds()]);
+    if (!data || !data.teams) return null;
+
+    // Values arrive as bare arrays; the category header names the columns.
+    const columns = {};
+    (data.categories || []).forEach((c) => { columns[c.name] = c.names || []; });
+
+    const readStats = (team) => {
+      const out = {};
+      (team.categories || []).forEach((cat) => {
+        const keys = columns[cat.name] || [];
+        const values = cat.values || [];          // null before the season starts
+        keys.forEach((key, i) => { out[key] = values[i] ?? null; });
+      });
+      return out;
+    };
+
+    const all = data.teams.map((t) => ({ id: t.team.id, stats: readStats(t) }));
+    const florida = all.find((t) => t.id === FLORIDA_ID);
+    if (!florida) return null;
+
+    const sec = all.filter((t) => secIds.includes(t.id));
+    const s = florida.stats;
+
+    // Every efficiency and rating here is "higher is better" (ESPN's own rank 1
+    // always holds the highest value), so one comparator covers them all.
+    const rankAmong = (pool, key) => {
+      const ranked = pool
+        .filter((t) => typeof t.stats[key] === "number")
+        .sort((a, b) => b.stats[key] - a.stats[key]);
+      const index = ranked.findIndex((t) => t.id === FLORIDA_ID);
+      return index === -1 ? null : { rank: index + 1, of: ranked.length };
+    };
+
+    const efficiency = (key, rankKey) => {
+      if (typeof s[key] !== "number") return null;
+      return {
+        value: Math.round(s[key] * 10) / 10,
+        rank: s[rankKey] ? Math.round(s[rankKey]) : null,
+        of: all.filter((t) => typeof t.stats[key] === "number").length,
+        sec: rankAmong(sec, key),
+      };
+    };
+
+    const num = (v) => (typeof v === "number" ? v : null);
+
+    return {
+      fpi: num(s.fpi),
+      fpiRank: s.fpirank ? Math.round(s.fpirank) : null,
+      fpiOf: all.length,
+      fpiSec: rankAmong(sec, "fpi"),
+      rankChange7: num(s.rankchange7days),
+      projWins: num(s.projectedw),
+      projLosses: num(s.projectedl),
+      odds: {
+        winOut: num(s.probwinout),
+        sixWins: num(s.prob6wins),
+        winConf: num(s.probwinconf),
+        playoff: num(s.probmakeplayoffs),
+        titleGame: num(s.probmaketitlegame),
+        winTitle: num(s.probwintitle),
+      },
+      resume: {
+        sos: s.avgsosrank ? Math.round(s.avgsosrank) : null,
+        sosRemaining: s.sosremainingrank ? Math.round(s.sosremainingrank) : null,
+        sor: s.accomplishmentrank ? Math.round(s.accomplishmentrank) : null,
+        gameControl: s.gamecontrolrank ? Math.round(s.gamecontrolrank) : null,
+      },
+      efficiency: {
+        total: efficiency("totefficiency", "totefficiencyrank"),
+        offense: efficiency("offefficiency", "offefficiencyrank"),
+        defense: efficiency("defefficiency", "defefficiencyrank"),
+        special: efficiency("stefficiency", "stefficiencyrank"),
+      },
+      secSize: sec.length,
+      asOf: data.lastUpdated || null,
+    };
+  }
+
   /** Run promises a few at a time — 25 simultaneous requests is rude. */
   async function inBatches(items, size, worker) {
     const out = [];
@@ -176,5 +279,5 @@ const ESPN = (() => {
     return games;
   }
 
-  return { fetchAll, SEASON };
+  return { fetchAll, fetchTeamIndex, SEASON };
 })();

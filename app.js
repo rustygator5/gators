@@ -32,7 +32,7 @@ async function boot() {
 
   const cache = Store.loadCache();
   if (cache && cache.games && cache.games.length) {
-    build(cache.games, cache.updated);       // instant paint from the last visit
+    build(cache.games, cache.updated, cache.teamIndex);   // instant paint from the last visit
   }
   await pull(false);
 }
@@ -40,8 +40,11 @@ async function boot() {
 async function pull(force) {
   if (state.fetching) return;
 
-  if (!force && state.updated) {
-    const live = (state.data ? state.data.games : []).some((g) => g.state === "in");
+  // A cache from before a feature shipped can be fresh but incomplete, so only
+  // skip the fetch when we actually hold everything the page renders.
+  const complete = state.data && state.data.teamIndex;
+  if (!force && state.updated && complete) {
+    const live = state.data.games.some((g) => g.state === "in");
     if (Date.now() - new Date(state.updated).getTime() < (live ? STALE_MS_LIVE : STALE_MS)) return;
   }
 
@@ -51,11 +54,12 @@ async function pull(force) {
   btn.textContent = state.data ? "Refreshing…" : "Loading…";
 
   try {
-    const games = await ESPN.fetchAll();
+    // The season-long index is a nice-to-have: if it fails, the rest still renders.
+    const [games, teamIndex] = await Promise.all([ESPN.fetchAll(), ESPN.fetchTeamIndex()]);
     if (games.length) {
       await Store.record(games, state.history);
-      Store.saveCache(games);
-      build(games, new Date().toISOString());
+      Store.saveCache(games, teamIndex);
+      build(games, new Date().toISOString(), teamIndex);
     } else if (!state.data) {
       $("#loading").textContent = "Couldn't reach ESPN. Check your connection and refresh.";
     }
@@ -67,7 +71,7 @@ async function pull(force) {
 }
 
 /** Attach grading + history to each game, roll up the season, then paint. */
-function build(games, updated) {
+function build(games, updated, teamIndex) {
   games.forEach((game) => {
     const series = state.history[game.id] || [];
     game.history = series;
@@ -79,6 +83,7 @@ function build(games, updated) {
     games,
     summary: Analysis.seasonSummary(games),
     timeline: Analysis.projectionTimeline(games, state.history),
+    teamIndex: teamIndex !== undefined ? teamIndex : (state.data || {}).teamIndex || null,
   };
   state.updated = updated;
   render();
@@ -98,6 +103,8 @@ function render() {
   renderBanner();
   renderSync();
   renderKpis();
+  renderOdds();
+  renderProfile();
   renderNext();
   renderChips();
   renderFpiChart();
@@ -148,6 +155,8 @@ function renderSync() {
 function renderKpis() {
   const s = state.data.summary;
   const played = s.gamesPlayed;
+  const ti = state.data.teamIndex;
+  const espnSixWins = ti && ti.odds ? ti.odds.sixWins : null;
 
   const tiles = [
     { label: "Record", value: s.record, sub: `${s.remainingGames} to play`, hero: true },
@@ -163,9 +172,12 @@ function renderKpis() {
     },
     { label: "Projected wins", value: fmt1(s.projectedWins), sub: `${fmt1(s.projectedLosses)} projected losses` },
     {
+      // ESPN's own simulation when we have it; our independent-games estimate
+      // otherwise. ESPN's is the number to trust — see the distribution note.
       label: "Bowl eligible",
-      value: s.bowlOdds === null ? "—" : `${s.bowlOdds}%`,
-      sub: "odds of reaching 6 wins",
+      value: espnSixWins !== null ? `${espnSixWins.toFixed(1)}%`
+        : s.bowlOdds === null ? "—" : `${s.bowlOdds}%`,
+      sub: espnSixWins !== null ? "ESPN's odds of 6 wins" : "odds of reaching 6 wins",
     },
     {
       label: "FPI calibration",
@@ -183,6 +195,116 @@ function renderKpis() {
   $("#kpi-note").textContent = played
     ? `${played} game${played === 1 ? "" : "s"} graded`
     : "Season hasn't kicked off — everything below is projection";
+}
+
+/* ------------------------------------------------- championship odds ---- */
+
+function renderOdds() {
+  const ti = state.data.teamIndex;
+  const box = $("#odds-tiles");
+
+  if (!ti) {
+    box.innerHTML = `<div class="empty-note">Couldn't load ESPN's season projections this time — try Refresh.</div>`;
+    $("#odds-note").textContent = "";
+    return;
+  }
+
+  const pct = (v) => (v === null ? "—" : `${v < 0.1 && v > 0 ? "<0.1" : v.toFixed(1)}%`);
+  const o = ti.odds;
+
+  const tiles = [
+    { label: "Win the SEC", value: pct(o.winConf), sub: "conference title" },
+    { label: "Make the Playoff", value: pct(o.playoff), sub: "reach the CFP field", hero: true },
+    { label: "Reach the final", value: pct(o.titleGame), sub: "national title game" },
+    { label: "Win it all", value: pct(o.winTitle), sub: "national champions" },
+    { label: "6+ wins", value: pct(o.sixWins), sub: "bowl eligible" },
+    { label: "Win out", value: pct(o.winOut), sub: "all 12, no losses" },
+  ];
+
+  box.innerHTML = tiles.map((t) => `<div class="kpi${t.hero ? " hero" : ""}">
+      <div class="label">${t.label}</div>
+      <div class="value">${t.value}</div>
+      <div class="sub">${t.sub}</div>
+    </div>`).join("");
+
+  $("#odds-note").textContent =
+    "Straight from ESPN's FPI, which simulates the rest of the season thousands of times.";
+}
+
+/* ---------------------------------------------------- team profile ------ */
+
+function renderProfile() {
+  const ti = state.data.teamIndex;
+  const box = $("#profile");
+  if (!ti) { box.innerHTML = `<div class="empty-note">Team profile unavailable right now.</div>`; return; }
+
+  const eff = ti.efficiency;
+  const hasEfficiency = eff.total || eff.offense || eff.defense || eff.special;
+
+  const meter = (name, e) => {
+    if (!e) return "";
+    // The efficiency value is already a 0-100 goodness score, so it doubles as
+    // the bar's fill — no rescaling, nothing implied that isn't in the data.
+    const secPart = e.sec ? ` · <b>${ordinal(e.sec.rank)}</b> of ${e.sec.of} in SEC` : "";
+    return `<div class="meter-row">
+      <div class="meter-name">${name}</div>
+      <div class="meter-track"><div class="meter-fill" style="width:${Math.max(2, e.value)}%"></div></div>
+      <div class="meter-rank"><b>#${e.rank ?? "—"}</b> of ${e.of}${secPart}</div>
+    </div>`;
+  };
+
+  const rankLine = (label, rank, hint, invert) => {
+    if (rank === null || rank === undefined || rank === 0) return "";
+    return `<div class="rank-line">
+      <span class="lbl">${label}<br><span class="hint">${hint}</span></span>
+      <span class="v">#${rank}</span>
+    </div>`;
+  };
+
+  const change = ti.rankChange7;
+  const changeText = change ? ` <span class="delta ${dirClass(-change)}">${change > 0 ? "▲" : "▼"} ${Math.abs(change)} in 7d</span>` : "";
+
+  box.innerHTML = `
+    <div class="profile-grid">
+      <div>
+        <h3>Efficiency</h3>
+        ${hasEfficiency ? `<div class="meters">
+            ${meter("Overall", eff.total)}
+            ${meter("Offense", eff.offense)}
+            ${meter("Defense", eff.defense)}
+            ${meter("Special teams", eff.special)}
+          </div>`
+          : `<div class="empty-note" style="padding:14px 4px;text-align:left">
+              Efficiency ratings are earned on the field — ESPN publishes them once games
+              have been played, so these bars fill in after the opener. They'll show how
+              Florida's offense, defense and special teams rank against all 138 FBS teams
+              and against the SEC.
+            </div>`}
+      </div>
+      <div>
+        <h3>Rating &amp; schedule</h3>
+        <div class="rank-list">
+          <div class="rank-line">
+            <span class="lbl">FPI rating<br><span class="hint">points better than average${changeText}</span></span>
+            <span class="v">${ti.fpi === null ? "—" : (ti.fpi > 0 ? "+" : "") + ti.fpi.toFixed(1)}</span>
+          </div>
+          <div class="rank-line">
+            <span class="lbl">National rank<br><span class="hint">of ${ti.fpiOf} FBS teams${ti.fpiSec ? ` · ${ordinal(ti.fpiSec.rank)} in the SEC` : ""}</span></span>
+            <span class="v">#${ti.fpiRank ?? "—"}</span>
+          </div>
+          ${rankLine("Strength of schedule", ti.resume.sos, "1 = toughest slate in the country")}
+          ${rankLine("Remaining schedule", ti.resume.sosRemaining, "how hard the rest of it is")}
+          ${rankLine("Strength of record", ti.resume.sor, "how impressive the results are so far")}
+          ${rankLine("Game control", ti.resume.gameControl, "how much of each game they've led")}
+        </div>
+      </div>
+    </div>`;
+}
+
+function ordinal(n) {
+  const rest = n % 100;
+  if (rest >= 11 && rest <= 13) return n + "th";
+  return n + (["th", "st", "nd", "rd"][n % 10] || "th");
 }
 
 function brierVerdict(b) {
@@ -609,9 +731,17 @@ function renderDistribution() {
   host.appendChild(svg);
 
   const best = bars.reduce((a, b) => (b.p > a.p ? b : a), bars[0]);
+  const ti = state.data.teamIndex;
+  const mine = s.bowlOdds;
+  const theirs = ti && ti.odds ? ti.odds.sixWins : null;
+  const caveat = (theirs !== null && mine !== null && Math.abs(theirs - mine) >= 1)
+    ? ` This curve treats each game as independent, so it reads a little rosier than ESPN's ` +
+      `simulation (${mine.toFixed(1)}% vs ${theirs.toFixed(1)}% for 6 wins) — a real season's results are correlated.`
+    : "";
+
   $("#dist-caption").textContent =
     `Final win total (x-axis). Most likely finish: ${best.wins}-${state.data.games.length - best.wins} ` +
-    `at ${best.p.toFixed(0)}%. Outcomes under 0.15% are hidden.`;
+    `at ${best.p.toFixed(0)}%. Outcomes under 0.15% are hidden.` + caveat;
 }
 
 /* --------------------------------------------------------------- table --- */
