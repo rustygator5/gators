@@ -8,6 +8,9 @@ const fmt1 = (n) => (n === null || n === undefined ? "—" : n.toFixed(1));
 const SERIES_SLOTS = ["--series-1", "--series-2", "--series-3", "--series-4"];
 const MAX_SELECTED = 4;
 
+// Florida's mark, from the same ESPN CDN the opponent logos already come from.
+const FLORIDA_LOGO = "https://a.espncdn.com/i/teamlogos/ncaa/500/57.png";
+
 // ESPN reruns FPI about once a day, so there's nothing to gain from polling it
 // hard. The only time fresh data matters by the minute is during a live game.
 const STALE_MS = 3 * 60 * 60 * 1000;
@@ -200,10 +203,14 @@ function renderNext() {
 
   $("#next-game").innerHTML = `
     <div class="next-teams">
-      ${game.opponentLogo ? `<img src="${game.opponentLogo}" alt="">` : ""}
+      <div class="matchup">
+        <img src="${FLORIDA_LOGO}" alt="Florida">
+        <span class="vs">${game.homeAway === "away" ? "at" : "vs"}</span>
+        ${game.opponentLogo ? `<img src="${game.opponentLogo}" alt="">` : ""}
+      </div>
       <div>
-        <div style="font-size:17px;font-weight:650">
-          ${locWord(game.homeAway)} ${game.opponentRank ? `<span class="rank">#${game.opponentRank}</span> ` : ""}${game.opponent}
+        <div class="next-title">
+          ${game.opponentRank ? `<span class="rank">#${game.opponentRank}</span> ` : ""}${game.opponent}
         </div>
         <div class="next-meta">
           <strong>${kickoff.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}</strong>
