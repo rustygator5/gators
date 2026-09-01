@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="auto">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gator Tracker &mdash; 2026 Florida Football</title>
+<meta name="theme-color" content="#0021A5">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Gators">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐊</text></svg>">
+<style>
+/* ---------------------------------------------------------------------------
+   Palette
+   Chrome (header, buttons, links) wears the official UF colors: orange #FA4616,
+   blue #0021A5.
+   Chart marks do NOT: UF blue sits outside the legal lightness band for a data
+   mark (too dark on light surfaces, and it disappears entirely on dark ones),
+   so the series colors are the same hue snapped to a step that passes the
+   colorblind-separation and contrast checks in each mode.
+--------------------------------------------------------------------------- */
+:root {
+  color-scheme: light;
+  --uf-orange:  #FA4616;
+  --uf-blue:    #0021A5;
+
+  --surface-0:  #f4f4f2;
+  --surface-1:  #fcfcfb;
+  --surface-2:  #efeeea;
+  --border:     #dedcd6;
+  --border-str: #c6c4bc;
+
+  --text-1:     #17171a;
+  --text-2:     #56555f;
+  --text-3:     #85838d;
+
+  --series-1:   #2a4bd0;   /* UF blue, stepped for light surfaces */
+  --series-2:   #FA4616;   /* UF orange */
+  --series-3:   #1baf7a;
+  --series-4:   #eda100;
+  --context:    #b9b7b1;   /* de-emphasised lines */
+
+  --good:       #128a4d;
+  --good-bg:    #e3f5eb;
+  --bad:        #c0392b;
+  --bad-bg:     #fbe9e7;
+  --neutral-bg: #eceaf3;
+
+  --grid:       #e7e5df;
+  --accent-ink: var(--uf-blue);
+  --shadow:     0 1px 2px rgba(15,15,20,.06), 0 4px 14px rgba(15,15,20,.05);
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --surface-0:  #121213;
+    --surface-1:  #1a1a19;
+    --surface-2:  #232322;
+    --border:     #33332f;
+    --border-str: #4a4a45;
+
+    --text-1:     #f5f4f0;
+    --text-2:     #b4b2ab;
+    --text-3:     #87857e;
+
+    --series-1:   #5b76e8;
+    --series-2:   #FA4616;
+    --series-3:   #199e70;
+    --series-4:   #c98500;
+    --context:    #55544f;
+
+    --good:       #4ac07f;
+    --good-bg:    #16301f;
+    --bad:        #f0736a;
+    --bad-bg:     #331b19;
+    --neutral-bg: #2a2a30;
+
+    --grid:       #2c2c2a;
+    --accent-ink: #7B90EE;
+    --shadow:     0 1px 2px rgba(0,0,0,.4), 0 4px 14px rgba(0,0,0,.3);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --surface-0:  #121213;  --surface-1: #1a1a19;  --surface-2: #232322;
+  --border:     #33332f;  --border-str:#4a4a45;
+  --text-1:     #f5f4f0;  --text-2:    #b4b2ab;  --text-3:    #87857e;
+  --series-1:   #5b76e8;  --series-2:  #FA4616;  --series-3:  #199e70;  --series-4: #c98500;
+  --context:    #55544f;
+  --good:       #4ac07f;  --good-bg:   #16301f;  --bad:       #f0736a;  --bad-bg:   #331b19;
+  --neutral-bg: #2a2a30;  --grid:      #2c2c2a;  --accent-ink:#7B90EE;
+  --shadow:     0 1px 2px rgba(0,0,0,.4), 0 4px 14px rgba(0,0,0,.3);
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--surface-0);
+  color: var(--text-1);
+  font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+h1, h2, h3 { margin: 0; font-weight: 650; letter-spacing: -.01em; }
+a { color: var(--accent-ink); }
+
+/* Gator stripe */
+.stripe { height: 4px; background: linear-gradient(90deg, var(--uf-orange), var(--uf-blue)); }
+
+header {
+  background: var(--surface-1);
+  border-bottom: 1px solid var(--border);
+  padding: 18px 0 16px;
+}
+.wrap { max-width: 1100px; margin: 0 auto; padding: 0 20px; }
+.head-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.logo { font-size: 26px; line-height: 1; }
+.title h1 { font-size: 21px; }
+.title p { margin: 2px 0 0; color: var(--text-2); font-size: 13px; }
+.title .orange { color: var(--uf-orange); }
+.head-actions { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+
+button, .btn {
+  font: inherit; font-size: 13px; font-weight: 550;
+  border: 1px solid var(--border-str); background: var(--surface-1); color: var(--text-1);
+  padding: 7px 13px; border-radius: 8px; cursor: pointer;
+}
+button:hover { background: var(--surface-2); }
+button.primary { background: var(--uf-blue); border-color: var(--uf-blue); color: #fff; }
+button.primary:hover { filter: brightness(1.12); }
+button[aria-pressed="true"] { border-color: var(--accent-ink); box-shadow: inset 0 0 0 1px var(--accent-ink); }
+button:disabled { opacity: .55; cursor: default; }
+
+main { padding: 22px 0 60px; }
+section { margin-bottom: 26px; }
+.sec-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+.sec-head h2 { font-size: 15px; }
+.sec-head p { margin: 0; color: var(--text-3); font-size: 12.5px; }
+
+.card {
+  background: var(--surface-1); border: 1px solid var(--border);
+  border-radius: 12px; box-shadow: var(--shadow);
+}
+.pad { padding: 16px 18px; }
+
+/* KPI row */
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(158px, 1fr)); gap: 12px; }
+.kpi { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 13px 15px; box-shadow: var(--shadow); }
+.kpi .label { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-3); font-weight: 600; }
+.kpi .value { font-size: 27px; font-weight: 680; letter-spacing: -.02em; margin-top: 3px; font-variant-numeric: tabular-nums; }
+.kpi .sub { font-size: 12px; color: var(--text-2); margin-top: 1px; }
+.kpi.hero .value { font-size: 34px; color: var(--uf-orange); }
+
+/* Next game */
+.next { display: grid; grid-template-columns: 1fr auto; gap: 18px; align-items: center; }
+.next-teams { display: flex; align-items: center; gap: 13px; }
+.next-teams img { width: 46px; height: 46px; object-fit: contain; }
+.next-meta { font-size: 13px; color: var(--text-2); }
+.next-meta strong { color: var(--text-1); font-weight: 600; }
+.next-nums { display: flex; gap: 22px; text-align: right; }
+.next-nums .n { font-size: 24px; font-weight: 660; font-variant-numeric: tabular-nums; }
+.next-nums .l { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-3); font-weight: 600; }
+
+/* Chart */
+.chart-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip {
+  font-size: 12px; font-weight: 550; padding: 4px 9px; border-radius: 999px;
+  border: 1px solid var(--border-str); background: var(--surface-1); color: var(--text-2); cursor: pointer;
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.chip[aria-pressed="true"] { color: var(--text-1); border-color: currentColor; }
+.chip .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--context); }
+figure { margin: 0; }
+figcaption { font-size: 12px; color: var(--text-3); margin-top: 8px; }
+svg { display: block; width: 100%; overflow: visible; }
+.axis text { font-size: 10.5px; fill: var(--text-3); }
+.axis line { stroke: var(--grid); }
+.tick-label { font-size: 10.5px; fill: var(--text-3); }
+.line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.line.context { stroke: var(--context); stroke-width: 1.5; opacity: .55; }
+.marker { r: 4; stroke: var(--surface-1); stroke-width: 2; }
+.end-label { font-size: 11.5px; font-weight: 600; }
+.empty-note { color: var(--text-3); font-size: 13px; padding: 26px 4px; text-align: center; }
+
+/* Tooltip */
+.tip {
+  position: fixed; pointer-events: none; z-index: 40; opacity: 0;
+  background: var(--surface-1); border: 1px solid var(--border-str); border-radius: 9px;
+  box-shadow: var(--shadow); padding: 8px 10px; font-size: 12.5px; min-width: 140px;
+  transition: opacity .08s;
+}
+.tip .t-date { color: var(--text-3); font-size: 11px; margin-bottom: 4px; }
+.tip .t-row { display: flex; align-items: center; gap: 7px; justify-content: space-between; }
+.tip .t-row .nm { display: flex; align-items: center; gap: 6px; }
+.tip .t-row .sw { width: 8px; height: 8px; border-radius: 2px; }
+.tip .t-row b { font-variant-numeric: tabular-nums; }
+
+/* Table */
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+th, td { padding: 9px 11px; text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap; }
+th { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-3); font-weight: 600; }
+tbody tr:last-child td { border-bottom: 0; }
+tbody tr:hover { background: var(--surface-2); }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.opp { display: flex; align-items: center; gap: 8px; }
+.opp img { width: 20px; height: 20px; object-fit: contain; }
+.loc { color: var(--text-3); font-weight: 600; font-size: 12px; }
+.rank { font-size: 11px; color: var(--uf-orange); font-weight: 700; }
+
+.tag {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11.5px; font-weight: 600; padding: 2px 7px; border-radius: 6px;
+  background: var(--neutral-bg); color: var(--text-2);
+}
+.tag.good { background: var(--good-bg); color: var(--good); }
+.tag.bad  { background: var(--bad-bg);  color: var(--bad); }
+.delta.up   { color: var(--good); }
+.delta.down { color: var(--bad); }
+.delta.flat { color: var(--text-3); }
+.muted { color: var(--text-3); }
+.bye-row td { background: var(--surface-2); font-size: 12.5px; }
+.bye-row:hover td { background: var(--surface-2); }
+.spark { width: 62px; height: 20px; }
+
+.legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--text-2); }
+.legend .item { display: flex; align-items: center; gap: 6px; }
+.legend .sw { width: 10px; height: 10px; border-radius: 2px; }
+
+.grid-2 { display: grid; grid-template-columns: 1.55fr 1fr; gap: 16px; align-items: start; }
+@media (max-width: 860px) {
+  .grid-2 { grid-template-columns: 1fr; }
+  .next { grid-template-columns: 1fr; }
+  .next-nums { justify-content: flex-start; text-align: left; }
+}
+footer { color: var(--text-3); font-size: 12px; padding: 0 0 30px; }
+.banner {
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 10px; padding: 10px 13px; font-size: 13px; color: var(--text-2); margin-bottom: 14px;
+}
+.banner b { color: var(--text-1); }
+</style>
+</head>
+<body>
+<div class="stripe"></div>
+
+<header>
+  <div class="wrap head-row">
+    <div class="logo">🐊</div>
+    <div class="title">
+      <h1>Gator <span class="orange">Tracker</span></h1>
+      <p>2026 Florida Gators football &middot; FPI, spreads &amp; results</p>
+    </div>
+    <div class="head-actions">
+      <span id="updated" class="muted" style="font-size:12px"></span>
+      <button id="theme-btn" title="Toggle light / dark">◐</button>
+      <button id="refresh-btn" class="primary">Refresh</button>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <div id="loading" class="empty-note">Loading season data…</div>
+  <div id="app" hidden>
+
+    <div id="tracking-banner" class="banner" hidden></div>
+    <div id="sync-banner" class="banner" hidden></div>
+
+    <section id="kpi-section">
+      <div class="sec-head">
+        <h2>Season scoreboard</h2>
+        <p id="kpi-note"></p>
+      </div>
+      <div class="kpis" id="kpis"></div>
+    </section>
+
+    <section id="next-section">
+      <div class="sec-head"><h2>Next up</h2></div>
+      <div class="card pad next" id="next-game"></div>
+    </section>
+
+    <section>
+      <div class="sec-head">
+        <h2>FPI win probability over time</h2>
+        <p>Every FPI run this app has recorded. Pick games to highlight.</p>
+      </div>
+      <div class="card pad">
+        <div class="chart-head">
+          <div class="chips" id="game-chips"></div>
+        </div>
+        <figure>
+          <div id="fpi-chart"></div>
+          <figcaption id="fpi-caption"></figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section>
+      <div class="grid-2">
+        <div>
+          <div class="sec-head">
+            <h2>Projected win total</h2>
+            <p>Wins so far plus every remaining game's FPI odds.</p>
+          </div>
+          <div class="card pad">
+            <figure>
+              <div id="proj-chart"></div>
+              <figcaption id="proj-caption"></figcaption>
+            </figure>
+          </div>
+        </div>
+        <div>
+          <div class="sec-head">
+            <h2>Where the season lands</h2>
+            <p>Odds of each final win total.</p>
+          </div>
+          <div class="card pad">
+            <figure>
+              <div id="dist-chart"></div>
+              <figcaption id="dist-caption"></figcaption>
+            </figure>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="sec-head">
+        <h2>Every game</h2>
+        <p>FPI win % at kickoff, the closing spread, and how each turned out.</p>
+      </div>
+      <div class="card table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Wk</th>
+              <th>Opponent</th>
+              <th class="num">FPI win %</th>
+              <th class="num">Move</th>
+              <th>Trend</th>
+              <th class="num">Spread</th>
+              <th>Result</th>
+              <th>vs. spread</th>
+              <th>FPI call</th>
+            </tr>
+          </thead>
+          <tbody id="games-body"></tbody>
+        </table>
+      </div>
+      <div class="legend" style="margin-top:10px">
+        <span class="item"><span class="tag good">Cover</span> Florida beat the spread</span>
+        <span class="item"><span class="tag bad">No cover</span> fell short of it</span>
+        <span class="item"><span class="tag">Push</span> landed exactly on the number</span>
+      </div>
+    </section>
+
+    <section id="accuracy-section">
+      <div class="sec-head">
+        <h2>How good is FPI?</h2>
+        <p>Graded three ways, because a probability is never simply "right".</p>
+      </div>
+      <div class="card pad" id="accuracy"></div>
+    </section>
+
+    <footer class="wrap" style="padding-left:0;padding-right:0">
+      Data: ESPN FPI (matchup predictor) and ESPN's odds feed (DraftKings line).
+      FPI reruns about once a day; this app keeps its own log of every change so the
+      trend lines exist. Nothing here is betting advice.
+    </footer>
+  </div>
+</main>
+
+<div class="tip" id="tip"></div>
+<script src="espn.js"></script>
+<script src="analysis.js"></script>
+<script src="store.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
