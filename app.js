@@ -242,12 +242,23 @@ function renderOdds() {
 
 /* ------------------------------------------------- odds over time ------- */
 
+/**
+ * `fmt` renders a value wherever it appears (headline, range, tooltip).
+ * `invert` flips the axis for rank, where a smaller number is a better season —
+ * so on that panel, as everywhere else, a line going up means good news.
+ */
 const ODDS_PANELS = [
-  { key: "playoff", title: "Make the Playoff" },
-  { key: "winConf", title: "Win the SEC" },
-  { key: "titleGame", title: "Reach the final" },
-  { key: "winTitle", title: "Win it all" },
+  { key: "fpi", title: "FPI rating", fmt: (v) => (v > 0 ? "+" : "") + v.toFixed(1) },
+  { key: "fpiRank", title: "National rank", fmt: (v) => "#" + Math.round(v), invert: true, integer: true },
+  { key: "playoff", title: "Make the Playoff", fmt: (v) => v.toFixed(1) + "%" },
+  { key: "winConf", title: "Win the SEC", fmt: (v) => v.toFixed(1) + "%" },
+  { key: "titleGame", title: "Reach the final", fmt: (v) => v.toFixed(1) + "%" },
+  { key: "winTitle", title: "Win it all", fmt: (v) => v.toFixed(1) + "%" },
 ];
+
+const pointsFor = (series, panel) => series
+  .filter((p) => p[panel.key] !== null && p[panel.key] !== undefined)
+  .map((p) => ({ t: new Date(p.t), y: p[panel.key] }));
 
 function renderOddsTrend() {
   const host = $("#odds-trend");
@@ -261,9 +272,7 @@ function renderOddsTrend() {
   }
 
   host.innerHTML = ODDS_PANELS.map((panel) => {
-    const points = series
-      .filter((p) => p[panel.key] !== null && p[panel.key] !== undefined)
-      .map((p) => ({ t: new Date(p.t), y: p[panel.key] }));
+    const points = pointsFor(series, panel);
     if (!points.length) return "";
 
     const latest = points[points.length - 1].y;
@@ -272,16 +281,23 @@ function renderOddsTrend() {
     const lo = Math.min(...points.map((p) => p.y));
     const hi = Math.max(...points.map((p) => p.y));
 
+    // Climbing the rankings means the number falls, so the arrow follows the
+    // meaning rather than the arithmetic.
+    const tone = dirClass(panel.invert ? -move : move);
+    const moveText = panel.invert
+      ? `${move === 0 ? "no change" : `${move < 0 ? "▲" : "▼"} ${Math.abs(move)} ${move < 0 ? "places" : "places"}`}`
+      : signed(move);
+
     return `<div class="sm-panel">
       <div class="sm-head">
         <span class="sm-title">${panel.title}</span>
-        <span class="sm-value">${latest.toFixed(1)}%</span>
+        <span class="sm-value">${panel.fmt(latest)}</span>
       </div>
       <div id="sm-${panel.key}"></div>
       <div class="sm-sub">
         ${points.length < 2
           ? "one reading so far"
-          : `${lo.toFixed(1)}–${hi.toFixed(1)}% range · <span class="delta ${dirClass(move)}">${signed(move)}</span> since tracking began`}
+          : `${panel.fmt(lo)}–${panel.fmt(hi)} · <span class="delta ${tone}">${moveText}</span> since tracking began`}
       </div>
     </div>`;
   }).join("");
@@ -291,28 +307,33 @@ function renderOddsTrend() {
   ODDS_PANELS.forEach((panel) => {
     const target = $(`#sm-${panel.key}`);
     if (!target) return;
-    const points = series
-      .filter((p) => p[panel.key] !== null && p[panel.key] !== undefined)
-      .map((p) => ({ t: new Date(p.t), y: p[panel.key] }));
+    const points = pointsFor(series, panel);
     if (!points.length) return;
 
     const values = points.map((p) => p.y);
     const lo = Math.min(...values);
     const hi = Math.max(...values);
-    const pad = Math.max(0.5, (hi - lo) * 0.35);
+    const pad = Math.max(panel.integer ? 1 : 0.5, (hi - lo) * 0.35);
+
+    // Rank is a whole number, so keep its axis on whole numbers too — otherwise
+    // a one-place move draws ticks reading 16.7, 17.0, 17.3.
+    const min = panel.integer ? Math.floor(lo - pad) : Math.max(0, lo - pad);
+    const max = panel.integer ? Math.ceil(hi + pad) : (panel.key === "fpi" ? hi + pad : Math.min(100, hi + pad));
 
     drawLines(target, [{
       id: panel.key, name: panel.title, selected: true,
       color: "var(--series-1)", points,
     }], {
-      yMin: Math.max(0, lo - pad),
-      yMax: Math.min(100, hi + pad),
+      yMin: min,
+      yMax: max,
       yTicks: null,
-      yFormat: (v) => v.toFixed(1),
+      yFormat: (v) => (panel.integer ? String(Math.round(v)) : v.toFixed(1)),
       height: 120,
-      tipFormat: (v) => v.toFixed(1) + "%",
+      tipFormat: panel.fmt,
       hideLegendNames: true,
       compact: true,
+      invert: !!panel.invert,
+      integer: !!panel.integer,
     });
   });
 
@@ -320,7 +341,8 @@ function renderOddsTrend() {
   const mode = Store.teamState();
   note.innerHTML = mode === "table-missing"
     ? `Recording on this device only — run <b>supabase-gators-odds.sql</b> once in Supabase to share it across devices.`
-    : `${series.length} reading${series.length === 1 ? "" : "s"} over ${days} day${days === 1 ? "" : "s"}. Each panel has its own scale.`;
+    : `${series.length} reading${series.length === 1 ? "" : "s"} over ${days} day${days === 1 ? "" : "s"}. ` +
+      `Each panel has its own scale; on rank the axis is flipped so up is better.`;
 }
 
 /* ---------------------------------------------------- team profile ------ */
@@ -717,11 +739,18 @@ function drawLines(host, series, opts) {
   if (t0 === t1) { t0 -= 21600000; t1 += 151200000; }
 
   const x = (t) => M.left + ((+t - t0) / (t1 - t0)) * (W - M.left - M.right);
-  const y = (v) => M.top + (1 - (v - opts.yMin) / (opts.yMax - opts.yMin)) * (H - M.top - M.bottom);
+  const span = opts.yMax - opts.yMin;
+  const y = (v) => {
+    const frac = (v - opts.yMin) / span;
+    return M.top + (opts.invert ? frac : 1 - frac) * (H - M.top - M.bottom);
+  };
 
   const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, height: H, role: "img" });
 
-  const ticks = opts.yTicks || niceTicks(opts.yMin, opts.yMax, opts.compact ? 2 : 4);
+  // A rank axis should tick on whole places, evenly spaced — dividing the range
+  // into equal fractions and rounding gives gaps like 13, 18, 22.
+  const ticks = opts.yTicks
+    || (opts.integer ? integerTicks(opts.yMin, opts.yMax) : niceTicks(opts.yMin, opts.yMax, opts.compact ? 2 : 4));
   const axis = el("g", { class: "axis" });
   ticks.forEach((v) => {
     axis.appendChild(el("line", { x1: M.left, x2: W - M.right, y1: y(v), y2: y(v) }));
@@ -833,6 +862,13 @@ function valueAt(points, stamp) {
   let found = null;
   for (const p of points) if (+p.t <= stamp) found = p;
   return found || (points.length && +points[0].t === stamp ? points[0] : null);
+}
+
+function integerTicks(min, max) {
+  const step = Math.max(1, Math.round((max - min) / 2));
+  const out = [];
+  for (let v = Math.ceil(min); v <= max; v += step) out.push(v);
+  return out.length ? out : [Math.round(min)];
 }
 
 function niceTicks(min, max, count) {
