@@ -139,20 +139,95 @@ const Store = (() => {
     return seeded;
   }
 
-  async function insert(rows) {
+  /* ---- season-odds history (playoff / title / conference) ---- */
+  const TEAM_TABLE = "gator_team_history";
+  const TEAM_HIST_KEY = "gatorTracker.teamHistory";
+
+  // Tracked separately from the per-game log: this table may not exist yet even
+  // when the other one does, and a missing one must not disturb the other.
+  let teamMode = "supabase";
+  const teamState = () => teamMode;
+
+  const TEAM_FIELDS = [
+    ["fpi", "fpi"], ["fpiRank", "fpi_rank"], ["projWins", "proj_wins"],
+    ["playoff", "prob_playoff"], ["titleGame", "prob_title_game"],
+    ["winTitle", "prob_win_title"], ["winConf", "prob_win_conf"],
+    ["sixWins", "prob_six_wins"], ["winOut", "prob_win_out"],
+  ];
+
+  const teamRowToPoint = (row) => {
+    const point = { t: new Date(row.recorded_at).toISOString().replace(/\.\d{3}Z$/, "Z") };
+    TEAM_FIELDS.forEach(([key, column]) => { point[key] = numOrNull(row[column]); });
+    return point;
+  };
+
+  async function loadTeamHistory() {
+    try {
+      const columns = ["recorded_at", ...TEAM_FIELDS.map(([, c]) => c)].join(",");
+      const res = await fetch(
+        rest(`${TEAM_TABLE}?season=eq.${SEASON}&select=${columns}&order=recorded_at.asc`),
+        { headers: headers() }
+      );
+      if (res.status === 404 || res.status === 400) { teamMode = "table-missing"; return localTeamHistory(); }
+      if (!res.ok) { teamMode = "offline"; return localTeamHistory(); }
+
+      teamMode = "supabase";
+      const series = (await res.json()).map(teamRowToPoint);
+      writeLocal(TEAM_HIST_KEY, series);
+      return series;
+    } catch (err) {
+      teamMode = "offline";
+      return localTeamHistory();
+    }
+  }
+
+  const localTeamHistory = () => readLocal(TEAM_HIST_KEY, []);
+
+  /**
+   * Append a point when any tracked odd has moved. `teamIndex` is what espn.js
+   * returned; `series` is updated in place so the caller can chart immediately.
+   */
+  async function recordTeamIndex(teamIndex, series) {
+    if (!teamIndex) return false;
+
+    const flat = {
+      fpi: teamIndex.fpi, fpiRank: teamIndex.fpiRank, projWins: teamIndex.projWins,
+      ...teamIndex.odds,
+    };
+    const point = { t: new Date().toISOString().replace(/\.\d{3}Z$/, "Z") };
+    TEAM_FIELDS.forEach(([key]) => { point[key] = flat[key] ?? null; });
+    if (TEAM_FIELDS.every(([key]) => point[key] === null)) return false;
+
+    const last = series[series.length - 1];
+    if (last && TEAM_FIELDS.every(([key]) => last[key] === point[key])) return false;
+
+    series.push(point);
+    writeLocal(TEAM_HIST_KEY, series);
+
+    if (teamMode === "supabase") {
+      const row = { season: SEASON, recorded_at: point.t };
+      TEAM_FIELDS.forEach(([key, column]) => { row[column] = point[key]; });
+      await insertInto(TEAM_TABLE, [row], () => { teamMode = "table-missing"; });
+    }
+    return true;
+  }
+
+  async function insertInto(table, rows, onMissing) {
     if (!rows.length) return false;
     try {
-      const res = await fetch(rest(TABLE), {
+      const res = await fetch(rest(table), {
         method: "POST",
         headers: headers({ Prefer: "return=minimal" }),
         body: JSON.stringify(rows),
       });
-      if (res.status === 404 || res.status === 400) { mode = "table-missing"; return false; }
+      if (res.status === 404 || res.status === 400) { if (onMissing) onMissing(); return false; }
       return res.ok;
     } catch (err) {
       return false;
     }
   }
+
+  const insert = (rows) => insertInto(TABLE, rows, () => { mode = "table-missing"; });
 
   /**
    * Append a point for any game whose FPI or line changed since the last one on
@@ -193,5 +268,9 @@ const Store = (() => {
     return rows.length;
   }
 
-  return { loadCache, saveCache, loadHistory, record, state, TABLE };
+  return {
+    loadCache, saveCache,
+    loadHistory, record, state, TABLE,
+    loadTeamHistory, recordTeamIndex, teamState, TEAM_TABLE,
+  };
 })();

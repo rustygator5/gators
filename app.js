@@ -19,6 +19,7 @@ const STALE_MS_LIVE = 60 * 1000;
 const state = {
   data: null,
   history: {},
+  teamHistory: [],
   updated: null,
   selected: [],
   slots: new Map(),     // event id -> colour slot (sticky: survivors never repaint)
@@ -29,6 +30,7 @@ const state = {
 
 async function boot() {
   state.history = await Store.loadHistory();
+  state.teamHistory = await Store.loadTeamHistory();
 
   const cache = Store.loadCache();
   if (cache && cache.games && cache.games.length) {
@@ -61,6 +63,7 @@ async function pull(force) {
       // the biggest of the lot — so don't spend it before the opener.
       const teamStats = games.some((g) => g.completed) ? await ESPN.fetchTeamStats() : null;
       await Store.record(games, state.history);
+      await Store.recordTeamIndex(teamIndex, state.teamHistory);
       Store.saveCache(games, teamIndex, teamStats);
       build(games, new Date().toISOString(), teamIndex, teamStats);
     } else if (!state.data) {
@@ -108,6 +111,7 @@ function render() {
   renderSync();
   renderKpis();
   renderOdds();
+  renderOddsTrend();
   renderProfile();
   renderStats();
   renderNext();
@@ -234,6 +238,89 @@ function renderOdds() {
 
   $("#odds-note").textContent =
     "Straight from ESPN's FPI, which simulates the rest of the season thousands of times.";
+}
+
+/* ------------------------------------------------- odds over time ------- */
+
+const ODDS_PANELS = [
+  { key: "playoff", title: "Make the Playoff" },
+  { key: "winConf", title: "Win the SEC" },
+  { key: "titleGame", title: "Reach the final" },
+  { key: "winTitle", title: "Win it all" },
+];
+
+function renderOddsTrend() {
+  const host = $("#odds-trend");
+  const note = $("#odds-trend-note");
+  const series = state.teamHistory || [];
+
+  if (!series.length) {
+    host.innerHTML = `<div class="empty-note">No odds history recorded yet.</div>`;
+    note.textContent = "";
+    return;
+  }
+
+  host.innerHTML = ODDS_PANELS.map((panel) => {
+    const points = series
+      .filter((p) => p[panel.key] !== null && p[panel.key] !== undefined)
+      .map((p) => ({ t: new Date(p.t), y: p[panel.key] }));
+    if (!points.length) return "";
+
+    const latest = points[points.length - 1].y;
+    const first = points[0].y;
+    const move = Math.round((latest - first) * 10) / 10;
+    const lo = Math.min(...points.map((p) => p.y));
+    const hi = Math.max(...points.map((p) => p.y));
+
+    return `<div class="sm-panel">
+      <div class="sm-head">
+        <span class="sm-title">${panel.title}</span>
+        <span class="sm-value">${latest.toFixed(1)}%</span>
+      </div>
+      <div id="sm-${panel.key}"></div>
+      <div class="sm-sub">
+        ${points.length < 2
+          ? "one reading so far"
+          : `${lo.toFixed(1)}–${hi.toFixed(1)}% range · <span class="delta ${dirClass(move)}">${signed(move)}</span> since tracking began`}
+      </div>
+    </div>`;
+  }).join("");
+
+  // Each panel is drawn on its own scale, padded so a flat line doesn't fill
+  // the box and a small wobble doesn't look like a collapse.
+  ODDS_PANELS.forEach((panel) => {
+    const target = $(`#sm-${panel.key}`);
+    if (!target) return;
+    const points = series
+      .filter((p) => p[panel.key] !== null && p[panel.key] !== undefined)
+      .map((p) => ({ t: new Date(p.t), y: p[panel.key] }));
+    if (!points.length) return;
+
+    const values = points.map((p) => p.y);
+    const lo = Math.min(...values);
+    const hi = Math.max(...values);
+    const pad = Math.max(0.5, (hi - lo) * 0.35);
+
+    drawLines(target, [{
+      id: panel.key, name: panel.title, selected: true,
+      color: "var(--series-1)", points,
+    }], {
+      yMin: Math.max(0, lo - pad),
+      yMax: Math.min(100, hi + pad),
+      yTicks: null,
+      yFormat: (v) => v.toFixed(1),
+      height: 120,
+      tipFormat: (v) => v.toFixed(1) + "%",
+      hideLegendNames: true,
+      compact: true,
+    });
+  });
+
+  const days = new Set(series.map((p) => p.t.slice(0, 10))).size;
+  const mode = Store.teamState();
+  note.innerHTML = mode === "table-missing"
+    ? `Recording on this device only — run <b>supabase-gators-odds.sql</b> once in Supabase to share it across devices.`
+    : `${series.length} reading${series.length === 1 ? "" : "s"} over ${days} day${days === 1 ? "" : "s"}. Each panel has its own scale.`;
 }
 
 /* ---------------------------------------------------- team profile ------ */
@@ -616,7 +703,9 @@ function renderProjection() {
 function drawLines(host, series, opts) {
   const W = host.clientWidth || 720;
   const H = opts.height;
-  const M = { top: 12, right: 52, bottom: 26, left: 38 };
+  const M = opts.compact
+    ? { top: 8, right: 12, bottom: 17, left: 34 }
+    : { top: 12, right: 52, bottom: 26, left: 38 };
 
   const pts = series.flatMap((s) => s.points);
   if (!pts.length) { host.innerHTML = `<div class="empty-note">No data.</div>`; return; }
@@ -632,7 +721,7 @@ function drawLines(host, series, opts) {
 
   const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, height: H, role: "img" });
 
-  const ticks = opts.yTicks || niceTicks(opts.yMin, opts.yMax, 4);
+  const ticks = opts.yTicks || niceTicks(opts.yMin, opts.yMax, opts.compact ? 2 : 4);
   const axis = el("g", { class: "axis" });
   ticks.forEach((v) => {
     axis.appendChild(el("line", { x1: M.left, x2: W - M.right, y1: y(v), y2: y(v) }));
