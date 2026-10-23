@@ -104,6 +104,7 @@ const ESPN = (() => {
         week: (event.week || {}).number ?? null,
         date: event.date,
         opponent: opp.displayName,
+        opponentId: opp.id,
         opponentShort: opp.abbreviation || opp.shortDisplayName,
         opponentLogo: logoOf(opp),
         opponentRank: rankOf(them),
@@ -202,6 +203,17 @@ const ESPN = (() => {
     const florida = all.find((t) => t.id === FLORIDA_ID);
     if (!florida) return null;
 
+    // Every team's rating and rank, keyed by id, so the schedule can show how
+    // good each opponent is without a second request.
+    const ratings = {};
+    all.forEach((t) => {
+      if (typeof t.stats.fpi !== "number") return;
+      ratings[t.id] = {
+        fpi: Math.round(t.stats.fpi * 10) / 10,
+        rank: t.stats.fpirank ? Math.round(t.stats.fpirank) : null,
+      };
+    });
+
     const sec = all.filter((t) => secIds.includes(t.id));
     const s = florida.stats;
 
@@ -255,6 +267,7 @@ const ESPN = (() => {
         defense: efficiency("defefficiency", "defefficiencyrank"),
         special: efficiency("stefficiency", "stefficiencyrank"),
       },
+      ratings,
       secSize: sec.length,
       asOf: data.lastUpdated || null,
     };

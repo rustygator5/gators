@@ -29,17 +29,25 @@ const state = {
 /* ---------------------------------------------------------------- data --- */
 
 async function boot() {
-  state.history = await Store.loadHistory();
-  state.teamHistory = await Store.loadTeamHistory();
+  // The history lives in Supabase, which can be slow to wake. Start loading it,
+  // but never let it hold up the page: ESPN has everything needed to render,
+  // and the history-derived charts fill in the moment it arrives.
+  const historyReady = Promise.all([Store.loadHistory(), Store.loadTeamHistory()])
+    .then(([history, teamHistory]) => {
+      state.history = history;
+      state.teamHistory = teamHistory;
+      if (state.data) build(state.data.games, state.updated);   // repaint the charts
+    })
+    .catch(() => { /* leaves the empty defaults in place */ });
 
   const cache = Store.loadCache();
   if (cache && cache.games && cache.games.length) {
     build(cache.games, cache.updated, cache.teamIndex, cache.teamStats);   // instant paint
   }
-  await pull(false);
+  await pull(false, historyReady);
 }
 
-async function pull(force) {
+async function pull(force, historyReady) {
   if (state.fetching) return;
 
   // A cache from before a feature shipped can be fresh but incomplete, so only
@@ -62,10 +70,15 @@ async function pull(force) {
       // Box-score stats only exist once games are played, and the payload is
       // the biggest of the lot — so don't spend it before the opener.
       const teamStats = games.some((g) => g.completed) ? await ESPN.fetchTeamStats() : null;
-      await Store.record(games, state.history);
-      await Store.recordTeamIndex(teamIndex, state.teamHistory);
       Store.saveCache(games, teamIndex, teamStats);
-      build(games, new Date().toISOString(), teamIndex, teamStats);
+      build(games, new Date().toISOString(), teamIndex, teamStats);   // paint now
+
+      // Recording has to wait for the existing history, or it can't tell what
+      // has actually changed — but the page is already on screen by then.
+      if (historyReady) await historyReady;
+      const moved = await Store.record(games, state.history);
+      const teamMoved = await Store.recordTeamIndex(teamIndex, state.teamHistory);
+      if (moved || teamMoved) render();
     } else if (!state.data) {
       $("#loading").textContent = "Couldn't reach ESPN. Check your connection and refresh.";
     }
@@ -959,7 +972,7 @@ function byeRow(row) {
   const when = new Date(row.date);
   return `<tr class="bye-row">
     <td class="muted">${row.week}</td>
-    <td colspan="8">
+    <td colspan="9">
       <span class="tag">BYE</span>
       <span class="muted" style="margin-left:8px">Open date — week of ${when.toLocaleDateString(undefined, { month: "long", day: "numeric" })}</span>
     </td>
@@ -1004,6 +1017,7 @@ function rowFor(g) {
         <span>${g.opponent}</span>
       </div>
     </td>
+    <td class="num">${oppFpiCell(g)}</td>
     <td class="num">${shownWp === null || shownWp === undefined ? "—" : shownWp.toFixed(1) + "%"}</td>
     <td class="num">${move}</td>
     <td>${sparkline(g)}</td>
@@ -1012,6 +1026,25 @@ function rowFor(g) {
     <td>${ats}</td>
     <td>${call}</td>
   </tr>`;
+}
+
+/**
+ * The opponent's own FPI rank — not the same thing as the orange AP/CFP chip
+ * beside their name, so it gets its own column and says which it is on hover.
+ */
+function oppFpiCell(game) {
+  const ratings = (state.data.teamIndex || {}).ratings;
+  const rating = ratings && game.opponentId ? ratings[game.opponentId] : null;
+  if (!rating || rating.rank === null) return `<span class="muted">—</span>`;
+
+  // Top quarter of FBS is a genuinely hard opponent; bottom quarter is not.
+  const total = Object.keys(ratings).length;
+  let tone = "";
+  if (rating.rank <= total / 4) tone = "rk-bad";          // tough for Florida
+  else if (rating.rank > (total * 3) / 4) tone = "rk-good";
+
+  const sign = rating.fpi > 0 ? "+" : "";
+  return `<span class="${tone}" title="FPI rank ${rating.rank} of ${total} · rating ${sign}${rating.fpi}">#${rating.rank}</span>`;
 }
 
 function sparkline(g) {

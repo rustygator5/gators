@@ -19,7 +19,7 @@ const Store = (() => {
   const CACHE_KEY = "gatorTracker.season";
   // Bumped whenever the cached payload gains a field the page renders, so a
   // still-fresh cache from an older version can't leave new sections empty.
-  const CACHE_SHAPE = 2;
+  const CACHE_SHAPE = 3;
   const HIST_KEY = "gatorTracker.history";
 
   // Day one of tracking, captured by the local Flask version before this page
@@ -50,6 +50,26 @@ const Store = (() => {
   }, extra || {});
 
   const rest = (path) => `${SB_URL}/rest/v1/${path}`;
+
+  // Supabase projects idle down and can take 20s to wake, or fail outright with
+  // a gateway timeout. Nothing here is allowed to hang forever: a request that
+  // overruns is abandoned and the local mirror is used instead.
+  const READ_TIMEOUT_MS = 15000;
+  const WRITE_TIMEOUT_MS = 10000;
+
+  async function sbFetch(path, options = {}, timeoutMs = READ_TIMEOUT_MS) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(rest(path), {
+        ...options,
+        headers: headers(options.headers),
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+  }
 
   /* ---- localStorage mirror ---- */
   function readLocal(key, fallback) {
@@ -97,13 +117,12 @@ const Store = (() => {
 
   async function loadHistory() {
     try {
-      const res = await fetch(
-        rest(`${TABLE}?season=eq.${SEASON}&select=event_id,recorded_at,win_pct,pred_margin,spread,over_under&order=recorded_at.asc`),
-        { headers: headers() }
+      const res = await sbFetch(
+        `${TABLE}?season=eq.${SEASON}&select=event_id,recorded_at,win_pct,pred_margin,spread,over_under&order=recorded_at.asc`
       );
 
       if (res.status === 404 || res.status === 400) { mode = "table-missing"; return localHistory(); }
-      if (!res.ok) { mode = "offline"; return localHistory(); }
+      if (!res.ok) { mode = "offline"; return localHistory(); }   // 5xx = project waking or down
 
       const rows = await res.json();
       mode = "supabase";
@@ -164,10 +183,7 @@ const Store = (() => {
   async function loadTeamHistory() {
     try {
       const columns = ["recorded_at", ...TEAM_FIELDS.map(([, c]) => c)].join(",");
-      const res = await fetch(
-        rest(`${TEAM_TABLE}?season=eq.${SEASON}&select=${columns}&order=recorded_at.asc`),
-        { headers: headers() }
-      );
+      const res = await sbFetch(`${TEAM_TABLE}?season=eq.${SEASON}&select=${columns}&order=recorded_at.asc`);
       if (res.status === 404 || res.status === 400) { teamMode = "table-missing"; return localTeamHistory(); }
       if (!res.ok) { teamMode = "offline"; return localTeamHistory(); }
 
@@ -215,11 +231,11 @@ const Store = (() => {
   async function insertInto(table, rows, onMissing) {
     if (!rows.length) return false;
     try {
-      const res = await fetch(rest(table), {
+      const res = await sbFetch(table, {
         method: "POST",
-        headers: headers({ Prefer: "return=minimal" }),
+        headers: { Prefer: "return=minimal" },
         body: JSON.stringify(rows),
-      });
+      }, WRITE_TIMEOUT_MS);
       if (res.status === 404 || res.status === 400) { if (onMissing) onMissing(); return false; }
       return res.ok;
     } catch (err) {
