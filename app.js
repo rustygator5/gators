@@ -442,11 +442,15 @@ function renderStats() {
       if (stat.rank <= stat.of / 3) tone = "rk-good";
       else if (stat.rank > (stat.of * 2) / 3) tone = "rk-bad";
     }
+    const why = stat.rankComputed
+      ? ` title="ESPN doesn't publish a national rank for this one — it sends #1 for every team — so this is worked out here from all ${stat.of}."`
+      : "";
+
     return `<div class="stat-line">
       <span class="lbl">${stat.label}</span>
       <span class="right">
         <span class="v">${value}</span>
-        <span class="rk"><span class="${tone}">#${stat.rank ?? "—"}</span> of ${stat.of}${secPart}</span>
+        <span class="rk"${why}><span class="${tone}">#${stat.rank ?? "—"}</span> of ${stat.of}${stat.rankComputed ? "*" : ""}${secPart}</span>
       </span>
     </div>`;
   };
@@ -462,7 +466,9 @@ function renderStats() {
       </div>
     </div>`;
 
-  note.textContent = "Per game, for and against. Defensive ranks are ESPN's — #1 allows the fewest.";
+  const anyComputed = [...stats.offense, ...stats.defense].some((s) => s.rankComputed);
+  note.innerHTML = "Per game, for and against. Defensive ranks are ESPN's — #1 allows the fewest."
+    + (anyComputed ? " <b>*</b> ESPN publishes no rank for the percentage stats, so those are worked out here." : "");
 }
 
 function ordinal(n) {

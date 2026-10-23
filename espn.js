@@ -323,12 +323,37 @@ const ESPN = (() => {
     const secIds = await fetchSecIds();
     const sec = all.filter((t) => secIds.includes(t.id));
 
-    const secRank = (split, key, lowerIsBetter) => {
-      const ranked = sec
-        .filter((t) => t.splits[split][key])
-        .sort((a, b) => (lowerIsBetter ? 1 : -1) * (a.splits[split][key].value - b.splits[split][key].value));
-      const index = ranked.findIndex((t) => t.id === FLORIDA_ID);
-      return index === -1 ? null : { rank: index + 1, of: ranked.length };
+    /**
+     * Rank Florida within a pool, ties sharing a place: one better than the
+     * number of teams strictly ahead of it.
+     */
+    const rankWithin = (pool, split, key, lowerIsBetter) => {
+      const mine = florida.splits[split][key];
+      if (!mine) return null;
+      const field = pool.filter((t) => t.splits[split][key]);
+      const ahead = field.filter((t) => {
+        const other = t.splits[split][key].value;
+        return lowerIsBetter ? other < mine.value : other > mine.value;
+      }).length;
+      return { rank: ahead + 1, of: field.length };
+    };
+
+    /**
+     * ESPN does not actually rank its percentage columns — it sends rank 1 for
+     * every single team on third- and fourth-down rate, which is how Florida
+     * ended up listed as #1 nationally while sitting 7th in its own conference.
+     * So a column whose ranks are identical across the field is treated as
+     * absent and ranked here instead. Phrased as a general check rather than a
+     * hard-coded exception, so it self-corrects if ESPN starts publishing them.
+     */
+    const ranksArePublished = (split, key) => {
+      const seen = new Set();
+      for (const team of all) {
+        const stat = team.splits[split][key];
+        if (stat && stat.rank !== null) seen.add(stat.rank);
+        if (seen.size > 1) return true;
+      }
+      return false;
     };
 
     const side = (split) => STAT_PICKS.map(([key, , label]) => {
@@ -337,12 +362,18 @@ const ESPN = (() => {
       // On defence fewer points and yards are better; a 3rd-down rate allowed
       // is the same story, so the whole opponent split reads lower-is-better.
       const lowerIsBetter = split === OPPONENT;
+      const published = ranksArePublished(split, key);
+      const national = published
+        ? { rank: stat.rank, of: all.filter((t) => t.splits[split][key]).length }
+        : rankWithin(all, split, key, lowerIsBetter);
+
       return {
         key, label,
         value: Math.round(stat.value * 10) / 10,
-        rank: stat.rank,
-        of: all.filter((t) => t.splits[split][key]).length,
-        sec: secRank(split, key, lowerIsBetter),
+        rank: national ? national.rank : null,
+        of: national ? national.of : 0,
+        rankComputed: !published,
+        sec: rankWithin(sec, split, key, lowerIsBetter),
         isPct: key.endsWith("Pct"),
       };
     }).filter(Boolean);
